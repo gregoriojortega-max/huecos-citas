@@ -1,0 +1,46 @@
+name: Leer huecos de citas
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # cada 30 minutos, 24 h, todos los días (hora UTC)
+  workflow_dispatch:          # permite lanzarlo a mano desde la pestaña Actions
+
+concurrency:
+  group: huecos
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # solo para el latido semanal
+
+jobs:
+  leer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Leer huecos y enviarlos a n8n
+        run: node scrape.mjs
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
+
+      - name: Latido semanal (evita que GitHub desactive la tarea por inactividad)
+        if: github.event_name == 'schedule'
+        run: |
+          if [ "$(date -u +%u)" = "7" ]; then
+            date -u +%F > heartbeat.txt
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            git add heartbeat.txt
+            git diff --cached --quiet || (git commit -m "latido semanal" && git push)
+          fi
