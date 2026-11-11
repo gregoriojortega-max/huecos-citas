@@ -55,11 +55,28 @@ function aMadrid(fecha, hora, zona) {
   return { fecha: `${p.year}-${p.month}-${p.day}`, hora: `${p.hour}:${p.minute}` };
 }
 
-// La página muestra "(GMT+01:00) Hora de Europa central - Madrid": solo se aceptan zonas conocidas
+// La página muestra p. ej. "(GMT-05:00) Hora oriental - Nueva York" y la zona depende de dónde esté el
+// servidor que la abre. Solo se aceptan ciudades conocidas, y el desfase mostrado debe coincidir con el
+// real de esa zona ahora mismo; si no, se rechaza (mejor no enviar nada que enviar horas mal).
+const ZONAS = [
+  [/Madrid/i, 'Europe/Madrid'],
+  [/Nueva York|New York/i, 'America/New_York'],
+  [/Chicago/i, 'America/Chicago'],
+  [/Denver/i, 'America/Denver'],
+  [/Los (Á|A)ngeles/i, 'America/Los_Angeles'],
+  [/Phoenix/i, 'America/Phoenix'],
+  [/Londres|London/i, 'Europe/London'],
+  [/Dubl(í|i)n/i, 'Europe/Dublin'],
+  [/(Á|A)msterdam/i, 'Europe/Amsterdam'],
+  [/Berl(í|i)n/i, 'Europe/Berlin'],
+  [/Par(í|i)s/i, 'Europe/Paris'],
+];
 function zonaDeEtiqueta(etiqueta) {
-  if (/Madrid/i.test(etiqueta)) return MADRID;
-  if (/Los (Á|A)ngeles|Pac[ií]fi/i.test(etiqueta)) return 'America/Los_Angeles';
-  return null;
+  const z = ZONAS.find(([re]) => re.test(etiqueta));
+  const m = etiqueta.match(/GMT([+-])(\d{2}):(\d{2})/);
+  if (!z || !m) return null;
+  const declarado = (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]));
+  return offsetMin(z[1], new Date()) === declarado ? z[1] : null;
 }
 
 // Se ejecuta dentro de la página: devuelve las cabeceras de día (7 números alineados)
