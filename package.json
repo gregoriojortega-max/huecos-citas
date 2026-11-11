@@ -1,0 +1,10 @@
+{
+  "name": "huecos-citas",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lee los huecos libres de las páginas públicas de reserva y los envía a n8n",
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}
