@@ -15,7 +15,7 @@ permissions:
 jobs:
   leer:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
 
@@ -26,9 +26,18 @@ jobs:
 
       - run: npm ci
 
-      - run: npx playwright install --with-deps chromium
+      - name: Instalar Chromium (3 intentos, 90 s cada uno)
+        timeout-minutes: 6
+        run: |
+          for i in 1 2 3; do
+            timeout 90 npx playwright install --with-deps chromium && exit 0
+            echo "Intento $i fallido, reintentando en 20 s"
+            sleep 20
+          done
+          exit 1
 
       - name: Leer huecos y enviarlos a n8n
+        timeout-minutes: 4
         run: node scrape.mjs
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
