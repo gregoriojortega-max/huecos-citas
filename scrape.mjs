@@ -34,16 +34,17 @@ function leerVista() {
   const visibles = [...document.querySelectorAll('*')].filter((e) => {
     const r = R(e);
     return e.children.length === 0 && /^\d{1,2}$/.test(e.textContent.trim()) && r.width > 0 && r.height > 0;
-  }).map((e) => ({ d: Number(e.textContent.trim()), x: Math.round(R(e).x + R(e).width / 2), y: Math.round(R(e).y) }));
+  }).map((e) => ({ d: Number(e.textContent.trim()), x: Math.round(R(e).x + R(e).width / 2), y: Math.round(R(e).y) }))
+    .sort((a, b) => a.y - b.y);
 
-  // Cabecera = grupo de exactamente 7 números en la misma fila y repartidos en horizontal
-  const grupos = new Map();
+  // Cabecera = grupo de exactamente 7 números en la misma fila (tolerancia 6 px) y repartidos en horizontal
+  const grupos = [];
   for (const n of visibles) {
-    const k = Math.round(n.y / 8);
-    grupos.set(k, [...(grupos.get(k) || []), n]);
+    const g = grupos.find((x) => Math.abs(x[0].y - n.y) <= 6);
+    if (g) g.push(n); else grupos.push([n]);
   }
   let cabecera = null;
-  for (const g of grupos.values()) {
+  for (const g of grupos) {
     if (g.length === 7) {
       const xs = g.map((n) => n.x);
       if (Math.max(...xs) - Math.min(...xs) > 500) { cabecera = g.sort((a, b) => a.x - b.x); break; }
