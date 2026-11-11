@@ -19,12 +19,47 @@ if (!DRY_RUN && (!WEBHOOK_URL || !WEBHOOK_TOKEN)) {
   process.exit(1);
 }
 
-function hoyMadrid() {
+const MADRID = 'Europe/Madrid';
+
+// Fecha de hoy en una zona horaria
+function hoyEn(zona) {
   const s = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date());
   const [y, m, d] = s.split('-').map(Number);
   return { y, m, d };
+}
+
+// Diferencia en minutos entre la hora de pared de `zona` y UTC en el instante `date`
+function offsetMin(zona, date) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: zona, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date).map((x) => [x.type, x.value]));
+  const comoUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return Math.round((comoUtc - Math.floor(date.getTime() / 1000) * 1000) / 60000);
+}
+
+// Convierte una fecha/hora de pared en `zona` a fecha/hora de Madrid
+function aMadrid(fecha, hora, zona) {
+  if (zona === MADRID) return { fecha, hora };
+  const [y, m, d] = fecha.split('-').map(Number);
+  const [hh, mm] = hora.split(':').map(Number);
+  const pared = Date.UTC(y, m - 1, d, hh, mm);
+  let inst = pared - offsetMin(zona, new Date(pared)) * 60000;
+  inst = pared - offsetMin(zona, new Date(inst)) * 60000;
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: MADRID, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  }).formatToParts(new Date(inst)).map((x) => [x.type, x.value]));
+  return { fecha: `${p.year}-${p.month}-${p.day}`, hora: `${p.hour}:${p.minute}` };
+}
+
+// La página muestra "(GMT+01:00) Hora de Europa central - Madrid": solo se aceptan zonas conocidas
+function zonaDeEtiqueta(etiqueta) {
+  if (/Madrid/i.test(etiqueta)) return MADRID;
+  if (/Los (Á|A)ngeles|Pac[ií]fi/i.test(etiqueta)) return 'America/Los_Angeles';
+  return null;
 }
 
 // Se ejecuta dentro de la página: devuelve las cabeceras de día (7 números alineados)
@@ -75,7 +110,11 @@ async function leerPagina(browser, { tipo, url, duracion_min }) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await page.waitForFunction(() => document.body.innerText.includes('Selecciona una hora') || document.body.innerText.includes('Select a time'), null, { timeout: 30000 });
 
-    let { y, m } = hoyMadrid();
+    const etiqueta = await page.evaluate(() => (document.body.innerText.match(/\(GMT[^\n]*/) || [''])[0]);
+    const zona = zonaDeEtiqueta(etiqueta);
+    if (!zona) throw new Error(`Zona horaria de la página no reconocida: "${etiqueta}"`);
+
+    let { y, m } = hoyEn(zona);
     let prev = 0;
     const huecos = [];
     for (let v = 0; v < VIEWS; v++) {
@@ -89,7 +128,7 @@ async function leerPagina(browser, { tipo, url, duracion_min }) {
       for (const b of vista.botones) {
         const dia = dias.reduce((a, c) => (Math.abs(c.x - b.x) < Math.abs(a.x - b.x) ? c : a));
         if (Math.abs(dia.x - b.x) > 40) throw new Error(`Botón ${b.h} no encaja con ninguna columna`);
-        huecos.push({ fecha: dia.fecha, hora: b.h });
+        huecos.push(aMadrid(dia.fecha, b.h, zona));
       }
       if (v < VIEWS - 1) {
         const primero = vista.cabecera[0].d;
@@ -109,7 +148,7 @@ async function leerPagina(browser, { tipo, url, duracion_min }) {
     // Sin duplicados y ordenado
     const unicos = [...new Map(huecos.map((h) => [`${h.fecha} ${h.hora}`, h])).values()]
       .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
-    return { tipo, duracion_min, ok: true, huecos: unicos };
+    return { tipo, duracion_min, ok: true, zona_pagina: etiqueta, huecos: unicos };
   } catch (e) {
     return { tipo, duracion_min, ok: false, error: String(e.message || e), huecos: [] };
   } finally {
